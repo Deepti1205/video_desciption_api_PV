@@ -321,7 +321,7 @@ Replace `your_task_id_here` with the actual `task_id` received from the previous
 curl -X POST -H "Content-Type: application/json" -H "flic-token: your_flic_token_here" -d '{"url": "https://example.com/video.mp4", "identifier": "custom_identifier"}' http://13.92.184.232:8000/api/v1/share_url
 
 Please use this to test
-curl -X POST -H "Content-Type:application/json" -d "{\"url\":\"https://video-cdn.socialverseapp.com/swapnil_e1994ef0-93e5-4c2e-9f53-1c7d63e1bb82.mp4\", \"identifier\":\"1\"}" http://127.0.0.1:8000/api/v1/share_url?app_name=app
+curl -X POST -H "Content-Type:application/json" -d "{\"url\":\"https://video-cdn.socialverseapp.com/swapnil_e1994ef0-93e5-4c2e-9f53-1c7d63e1bb82.mp4\", \"identifier\":\"1\"}" http://127.0.0.1:8000/api/v1/share_url
 ```
 
 Replace `your_flic_token_here` with your actual authentication token.
