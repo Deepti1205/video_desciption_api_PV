@@ -53,7 +53,7 @@ This project provides a powerful API for analyzing videos, generating detailed d
 4. Set up your environment variables:
    Create a `.env` file in the root directory and add your OpenAI API key:
    ```
-   OPENAI_API_KEY=your_openai_api_key_here
+   OPENAI_API_KEY=your_openai_api_key_here # Please use your GEMINI API key
    EMPOWERVERSE_API_KEY=your_empowerverse_api_key_here
    API_PATH=your_api_path_here
    ```
@@ -301,7 +301,10 @@ You can use cURL to interact with the API directly from the command line:
 1. Uploading a video and starting analysis:
 
 ```bash
-curl -X POST -F "video=@path/to/your/video.mp4" http://13.92.184.232:8000/api/v1/analyze_video
+#curl -X POST -F "video=@path/to/your/video.mp4" http://13.92.184.232:8000/api/v1/analyze_video
+
+Please use this to test
+curl -X POST -F "video=@path/to/your/swapnil_e1994ef0-93e5-4c2e-9f53-1c7d63e1bb82.mp4" http://127.0.0.1:8000/api/v1/analyze_video?app_name=app
 ```
 
 2. Retrieving analysis results:
@@ -316,6 +319,9 @@ Replace `your_task_id_here` with the actual `task_id` received from the previous
 
 ```bash
 curl -X POST -H "Content-Type: application/json" -H "flic-token: your_flic_token_here" -d '{"url": "https://example.com/video.mp4", "identifier": "custom_identifier"}' http://13.92.184.232:8000/api/v1/share_url
+
+Please use this to test
+curl -X POST -H "Content-Type:application/json" -d "{\"url\":\"https://video-cdn.socialverseapp.com/swapnil_e1994ef0-93e5-4c2e-9f53-1c7d63e1bb82.mp4\", \"identifier\":\"1\"}" http://127.0.0.1:8000/api/v1/share_url?app_name=app
 ```
 
 Replace `your_flic_token_here` with your actual authentication token.
