@@ -1,11 +1,16 @@
 import base64
 from openai import AsyncOpenAI
+import google.generativeai as genai
+from PIL import Image
+import io
 from app.core.task_tracker import task_tracker
 from app.core.config import settings
 from app.core.logging import logger
 from typing import List
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+#client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+client = genai.configure(api_key=settings.GEMINI_API_KEY)
 
 async def analyze_grid_images(base64_images: List[str], task_id: str = None) -> List[str]:
     """
@@ -21,6 +26,8 @@ async def analyze_grid_images(base64_images: List[str], task_id: str = None) -> 
     try:
         descriptions = []
         total_images = len(base64_images)
+        #model = genai.GenerativeModel("gemini-pro-vision") #deprecated
+        model = genai.GenerativeModel("gemini-1.5-flash")
         
         for idx, base64_image in enumerate(base64_images, 1):
             if task_id:
@@ -51,8 +58,9 @@ async def analyze_grid_images(base64_images: List[str], task_id: str = None) -> 
             Pay special attention to elements that indicate Christian content or messaging.
             """
 
-            response = await client.chat.completions.create(
-                model="gpt-4o",
+            """response = await client.chat.completions.create(
+                #model="gpt-4o",
+                model = genai.GenerativeModel("gemini-pro-vision"),
                 messages=[
                     {
                         "role": "user",
@@ -68,8 +76,23 @@ async def analyze_grid_images(base64_images: List[str], task_id: str = None) -> 
                     }
                 ],
                 max_tokens=500
+            )"""
+            #Changes as per Gemini API
+            image_data = base64.b64decode(base64_image)
+            #image_part = genai.Part.from_data(mime_type="image/png", data=image_data)
+
+            #image = Image.open(io.BytesIO(image_data))
+            #image_part = genai.upload_image(image, mime_type="image/png")
+            response = model.generate_content(
+                        [prompt,
+                         {
+                             "mime_type": "image/png",  # Specify image format
+                             "data": image_data  # Pass the raw image bytes inside a dictionary
+                         }
+                         ],
+                        generation_config=genai.GenerationConfig(max_output_tokens=1500)
             )
-            descriptions.append(response.choices[0].message.content.strip())
+            descriptions.append(response.text.strip())
         
         return descriptions
     except Exception as e:
@@ -150,8 +173,9 @@ async def generate_description(base64_images: List[str], audio_transcription: st
         """
 
         # Generate final combined description
-        response = await client.chat.completions.create(
-            model="gpt-4",
+        """response = await client.chat.completions.create(
+            #model="gpt-4",
+            model = genai.GenerativeModel("gemini-pro-vision"),
             messages=[
                 {
                     "role": "user",
@@ -159,12 +183,18 @@ async def generate_description(base64_images: List[str], audio_transcription: st
                 }
             ],
             max_tokens=1500
-        )
+        )"""
+        #Changed as per Gemini API
+        model = genai.GenerativeModel("gemini-1.5-pro")
+        response = model.generate_content(
+                    final_prompt,
+                    generation_config=genai.GenerationConfig(max_output_tokens=1500)
+                                          )
         
         if task_id:
             task_tracker.update_progress(task_id, "Description generation completed", 75)
             
-        return response.choices[0].message.content.strip()
+        return response.text.strip()
     except Exception as e:
         error_msg = f"Error in generate_description: {str(e)}"
         logger.error(error_msg)

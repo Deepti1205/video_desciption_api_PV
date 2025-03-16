@@ -7,6 +7,7 @@ from app.core.logging import logger
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from openai import AsyncOpenAI
+import google.generativeai as genai
 from app.core.config import settings
 import asyncio
 from collections import defaultdict
@@ -14,10 +15,12 @@ import tempfile
 import os
 from app.core.task_tracker import task_tracker
 import json
+import re
 
 # Task queue to store processing results
 task_queue: Dict[str, Dict] = defaultdict(dict)
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+#client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+client = genai.configure(api_key=settings.GEMINI_API_KEY)
 
 async def split_video(video_content: bytes, task_id: str) -> List[bytes]:
     """
@@ -222,34 +225,93 @@ async def check_content_moderation(base64_images: List[str]) -> Tuple[bool, List
         
         # Process each image individually
         for idx, base64_image in enumerate(base64_images):
-            response = await client.moderations.create(
-                model="omni-moderation-latest",
-                input=[{
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/png;base64,{base64_image}"
-                    }
-                }]
-            )
-            
-            result = response.results[0]
-            
+
+            #Changed as per GEMINI API
+            image_data = base64.b64decode(base64_image)
+            image_part = {"mime_type": "image/png", "data": image_data}
+
+            prompt = """
+            Analyze the following image for the presence of:
+            - Sexual content
+            - Sexual content involving minors
+            - Violence
+            - Graphic violence
+            - Harassment
+            - Threatening harassment
+            - Hate speech
+            - Threatening hate speech
+            - Self-harm
+            - Intentional self-harm
+            - Instructions for self-harm
+            - Illicit activities
+            - Violent illicit activities
+
+            Provide a score (0-1) for each category, where 1 indicates high confidence.
+            Also, indicate if the content is flagged as unsafe (yes/no).
+            Respond in a structured format, like:
+            Sexual: 0.8, Flagged: yes
+            Violence: 0.1, Flagged: no
+            ...
+            """
+
+            # response = await client.moderations.create(
+            #     # model="omni-moderation-latest",
+            #     #model=genai.GenerativeModel("gemini-pro-vision"),
+            #     model=genai.GenerativeModel("gemini-1.5-flash"),
+            #     input=[{
+            #         "type": "image_url",
+            #         "image_url": {
+            #             "url": f"data:image/png;base64,{base64_image}"
+            #         }
+            #     }]
+            # )
+
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            response = model.generate_content([prompt, image_part])
+
+            if not response or not response.text:
+                logger.error("Error: Empty or invalid response from Gemini API")
+                return False, ["CRITICAL RISK - Error processing content moderation"]
+
+            response_text = response.text.strip()
+            logger.info(f"Moderation Response: {response_text}")
+
+            #print(response_text)
+
+            # Parse Gemini response
+            result = parse_moderation_response(response_text)
+
+            #print(result)
+            # Check if response was parsed correctly
+            if not result:
+                logger.warning("No categories detected in response, possible parsing issue.")
+                continue
+
             # Check if content is flagged by any category
-            if result.flagged:
+            if any(res.get('flagged', False) for res in result.values()):
                 is_safe = False
                 all_warnings.append("SYSTEM FLAG - Content flagged by moderation system")
             
             # Check all categories with their specific thresholds
-            for category in thresholds.keys():
+            """for category in thresholds.keys():
                 # Get score safely using getattr
-                score = getattr(result.category_scores, category.replace('/', '_'), 0.0)
-                
+                score = getattr(result.category_scores, category.replace('/', '_'), 0.0)"""
+            #print("HERE 1")
+            # Check all categories with their specific thresholds
+            for category,threshold in thresholds.items():
+                normalized_category = category.replace('/', ' ').lower()
+                #print("HERE 2")
+                # Ensure the category exists in result, else use default score of 0.0
+                score = result.get(normalized_category, {}).get('score', 0.0)
+                #print("HERE 3")
+                # Validate score type
                 if not isinstance(score, (int, float)):
-                    continue
-                
-                threshold = thresholds[category]
+                    continue # Skip invalid scores
+
                 display_category = category.replace('/', ' - ').title()
-                
+
+                #print(display_category)
+
                 if score >= threshold:
                     is_safe = False
                     if score > 0.7:
@@ -262,16 +324,35 @@ async def check_content_moderation(base64_images: List[str]) -> Tuple[bool, List
                         # pass
                         severity = "LOW" # In low if confidence is below 25% then it is safe
                     all_warnings.append(f"{severity} RISK - {display_category} detected (confidence: {score:.1%})")
-            
+
+                # Check applied input types for additional context (e.g., image)
+                if normalized_category in result: # Ensure category exists in result
+                    if "image" in normalized_category:  # Example condition for image-based content
+                        if score >= thresholds[category]:
+                            display_category = category.replace('/', ' - ').title()
+                            all_warnings.append(f"IMAGE SPECIFIC - {display_category} detected in visual content")
+
+                #print("Now here")
+
             # Check applied input types for additional context
-            for category in thresholds.keys():
+            """for category in thresholds.keys():
                 category_key = category.replace('/', '_')
                 types = getattr(result.category_applied_input_types, category_key, [])
                 score = getattr(result.category_scores, category_key, 0.0)
                 
                 if "image" in types and score >= thresholds[category]:
                     display_category = category.replace('/', ' - ').title()
-                    all_warnings.append(f"IMAGE SPECIFIC - {display_category} detected in visual content")
+                    all_warnings.append(f"IMAGE SPECIFIC - {display_category} detected in visual content")"""
+
+            # Check applied input types for additional context (e.g., image)
+            """for category in thresholds.keys():
+                normalized_category = category.replace('/', ' ').lower()
+
+                if normalized_category in result:  # Ensure category exists in result
+                    # Extract the score for the category safely (default to 0.0 if not present)
+                    score = result[normalized_category].get('score', 0.0)"""
+
+        #print("Now before duplicates")
         
         # Remove duplicates while preserving order
         seen = set()
@@ -309,6 +390,41 @@ async def check_content_moderation(base64_images: List[str]) -> Tuple[bool, List
         logger.error(f"Error in content moderation: {str(e)}")
         return False, ["CRITICAL RISK - Error in content moderation system"]
 
+
+# Customized code for Parsing response from moderation
+def parse_moderation_response(response_text: str) -> dict:
+    """
+    Parses the Gemini API response text to extract category scores and flags.
+    """
+    result = {}
+
+    # Regex to match "Category: Score, Flagged: yes/no"
+    pattern = r"\*\*(.*?)\*\*:\s*([\d.]+).*?Flagged:\s*(yes|no)"
+    matches = re.findall(pattern, response_text, re.IGNORECASE)
+    print(matches)
+
+    if matches:
+        for category, score_str, flagged_str in matches:
+            category = category.strip().lower()
+            score = float(score_str)
+            flagged = flagged_str.lower() == "yes"
+            result[category] = {"score": score, "flagged": flagged}
+        return result
+
+    # If regex fails, use alternative parsing
+    lines = response_text.split("\n")
+    for i in range(0, len(lines), 2):  # Process two lines at a time
+        if i + 1 < len(lines) and "Flagged:" in lines[i + 1]:
+            category = lines[i].strip().replace("**", "").lower()
+            score_match = re.search(r"([\d.]+)", lines[i])
+            if score_match:
+                score = float(score_match.group())
+                flagged = "yes" in lines[i + 1].lower()
+                result[category] = {"score": score, "flagged": flagged}
+
+    return result
+
+
 async def analyze_grid_images(base64_images: List[str], task_id: str = None) -> List[str]:
     """
     Analyze grid images using GPT-4 vision model.
@@ -323,8 +439,9 @@ async def analyze_grid_images(base64_images: List[str], task_id: str = None) -> 
                 task_tracker.update_progress(task_id, f"Analyzing grid image {idx}/{total_images}", progress)
             
             try:
-                response = await client.chat.completions.create(
-                    model="gpt-4",
+                """response = await client.chat.completions.create(
+                    #model="gpt-4",
+                    model = genai.GenerativeModel("gemini-pro-vision"),
                     messages=[
                         {
                             "role": "system",
@@ -350,8 +467,37 @@ async def analyze_grid_images(base64_images: List[str], task_id: str = None) -> 
                 )
                 
                 description = response.choices[0].message.content.strip()
-                descriptions.append(description)
-                
+                descriptions.append(description)"""
+
+                #Changed as per GEMINI API
+
+                # Decode base64 image to raw bytes
+                image_data = base64.b64decode(base64_image)
+
+                # Initialize Gemini model
+                #model = genai.GenerativeModel("gemini-pro-vision") #deprecated
+                model = genai.GenerativeModel("gemini-1.5-flash")
+
+                # Combine system and user instructions into the prompt
+                prompt = [
+                    "You are a video frame analysis expert. Describe the key visual elements, actions, and details in this frame grid.",
+                    {
+                        "mime_type": "image/png",  # Ensure correct MIME type
+                        "data": image_data
+                    },
+                    "Analyze this grid of video frames. Focus on: main subjects, actions, visual elements, text overlays, scene composition, and any notable details."
+                ]
+
+                # Send the combined prompt to Gemini API
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.GenerationConfig(max_output_tokens=500)
+                )
+
+                # Extract and store the description
+                descriptions.append(response.text.strip())
+
+
             except Exception as e:
                 logger.error(f"Error analyzing grid image {idx}: {str(e)}")
                 descriptions.append(f"Error analyzing frame grid {idx}")

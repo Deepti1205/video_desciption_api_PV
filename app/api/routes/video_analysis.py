@@ -164,15 +164,17 @@ async def analyze_video_task(video_content: bytes, video_filename: str, task_id:
         # Handle callback if identifier is provided
         if identifier:
             task_tracker.update_progress(task_id, "Sending callback", current_progress)
-            print(f"Sending callback to: {EMPOWERVERSE_API_PATH}/post/summary")
+            """print(f"Sending callback to: {EMPOWERVERSE_API_PATH}/post/summary")
             # api_url = f"{EMPOWERVERSE_API_PATH if app_name == 'empowerverse' else WEMOTIONS_API_PATH}/post/summary"
             api_url = ""
             if app_name == 'empowerverse':
                 api_url = f"{EMPOWERVERSE_API_PATH}/post/summary" 
             elif app_name == 'wemotions':
                 f"{WEMOTIONS_API_PATH}/post/summary"
+            """
             
             # api_url = "http://localhost:8000/post/summary"
+            """api_url = " http://127.0.0.1:8000/post/summary"
             payload = {
                 "key": VIDEO_DESCRIPTION_KEY,
                 "identifier": identifier,
@@ -183,7 +185,7 @@ async def analyze_video_task(video_content: bytes, video_filename: str, task_id:
             if response.status_code == 200:
                 logger.info("Data sent to PHP API successfully.")
             else:
-                logger.error(f"Failed to send data to PHP API: {response.content}")
+                logger.error(f"Failed to send data to PHP API: {response.content}")"""
         
         current_progress = 100
         task_tracker.update_progress(task_id, "Task completed", current_progress)
@@ -250,6 +252,7 @@ async def analyze_video(background_tasks: BackgroundTasks, app_name: str, video:
 @router.get("/analysis_result/{task_id}")
 async def get_analysis_result(task_id: str):
     result = analysis_results.get(task_id)
+    print(result)
     if result is None:
         # Get progress from task tracker
         task_data = task_tracker.tasks.get(task_id)
@@ -263,17 +266,15 @@ async def get_analysis_result(task_id: str):
     return result
 
 @router.post("/share_url")
-async def share_url(
-    background_tasks: BackgroundTasks,
-    flic_token: str = Header(...),
-    data: dict = Body(...)
-):
+#async def share_url(background_tasks: BackgroundTasks, flic_token: str = Header(...), data: dict = Body(...))
+async def share_url(background_tasks: BackgroundTasks,  data: dict = Body(...)):
     url = data.get('url')
     identifier = data.get('identifier'),
     is_christian_content = data.get('is_christian_content', False)
 
+    app_name = "test"
      # Check if flic_token is valid for either API key
-    if flic_token == EMPOWERVERSE_API_KEY:
+    """if flic_token == EMPOWERVERSE_API_KEY:
         app_name = "empowerverse"
     elif flic_token == WEMOTIONS_API_KEY:
         app_name = "wemotions"
@@ -281,7 +282,7 @@ async def share_url(
         return {
             "status": "error",
             "message": "Invalid Flic_Token"
-        }
+        }"""
 
     if not url or not identifier:
         return {
@@ -289,6 +290,7 @@ async def share_url(
             "message": "url and identifier are required fields"
         }
 
+    #removed app_name here as not validating flic_token
     background_tasks.add_task(analyze_video, background_tasks, app_name, file_url=url, identifier=identifier, is_christian_content=is_christian_content)
     return {
         "status": "success",

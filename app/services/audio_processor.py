@@ -2,6 +2,7 @@ import os
 import time
 from moviepy.editor import VideoFileClip
 from openai import AsyncOpenAI
+import google.generativeai as genai
 import tempfile
 from app.core.logging import logger
 from datetime import datetime
@@ -15,7 +16,8 @@ import json
 import asyncio
 
 OUTPUT_FOLDER = os.path.abspath("video_analysis_output")
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+#client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+client = genai.configure(api_key=settings.GEMINI_API_KEY)
 MAX_CHUNK_SIZE = 24 * 1024 * 1024  # 24MB to stay safely under the 25MB limit
 CHUNK_DURATION = 10 * 60 * 1000  # 10 minutes in milliseconds
 
@@ -106,12 +108,30 @@ async def process_audio(video_content: bytes, task_id: str = None) -> Tuple[List
                         raise ValueError(f"Chunk {i+1} size ({chunk_size} bytes) exceeds maximum allowed size ({MAX_CHUNK_SIZE} bytes)")
                     
                     # Transcribe chunk
-                    with open(temp_chunk.name, "rb") as audio_file:
+                    """with open(temp_chunk.name, "rb") as audio_file:
                         transcription = await client.audio.transcriptions.create(
                             model="whisper-1",
                             file=audio_file
                         )
-                        transcriptions.append(transcription.text)
+                        transcriptions.append(transcription.text)"""
+
+                    #Changed as per Gemini API
+                    with open(temp_chunk.name, "rb") as audio_file:
+                        audio_data = audio_file.read()
+                        #model = genai.GenerativeModel("gemini-pro-vision") #deprecated
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+
+                        # Send the audio file for transcription
+                        response = model.generate_content([
+                            "Transcribe this audio:",
+                            {
+                                "mime_type": "audio/wav",  # Update MIME type based on your file format
+                                "data": audio_data
+                            }
+                        ])
+
+                        # Extract transcription and append to list
+                        transcriptions.append(response.text)
                         
                     logger.info(f"Chunk {i+1}/{num_chunks} transcribed successfully")
                     

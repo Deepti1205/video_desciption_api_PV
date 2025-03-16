@@ -17,3 +17,4 @@ sseclient-py
 aiohttp
 sse_starlette
 pydub
+google-generativeai==0.8.4
